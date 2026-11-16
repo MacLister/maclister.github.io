@@ -65,6 +65,18 @@ header.nav { position: sticky; top: 0; z-index: 5; backdrop-filter: blur(16px); 
               box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
 .shot .play[aria-pressed="true"]::before { content: "▶"; margin-right: 10px; }
 .shot .play[aria-pressed="true"]:hover { transform: translate(-50%, -50%) scale(1.05); }
+/* full screen: a corner button (shown only where the browser can do it), and the video filling the screen */
+.shot .full { position: absolute; right: 14px; top: 14px; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 999px; cursor: pointer;
+              display: grid; place-items: center; color: #fff; background: rgba(20, 22, 40, .55); backdrop-filter: blur(6px); opacity: .75; }
+.shot .full:hover, .shot .full:focus-visible { opacity: 1; }
+.shot .full[hidden] { display: none; }
+.shot .full svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.shot .full .i-exit, .shot.is-full .full .i-enter { display: none; }
+.shot.is-full .full .i-exit { display: block; }
+.shot.video:fullscreen { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; margin: 0; background: #000; }
+.shot.video:fullscreen video { width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain; border-radius: 0; box-shadow: none; background: #000; }
+.shot.video:-webkit-full-screen { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; margin: 0; background: #000; }
+.shot.video:-webkit-full-screen video { width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain; border-radius: 0; box-shadow: none; background: #000; }
 
 section { padding: 64px 0 8px; }
 h2 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -.01em; margin: 0 0 8px; text-align: center; }
@@ -152,6 +164,10 @@ html[lang="en"] [data-l="en"], html[lang="pl"] [data-l="pl"] { display: revert; 
     </video>
     <button class="play" id="demo-toggle" type="button" aria-pressed="true">
       <span data-l="en">Play</span><span data-l="pl">Odtwórz</span>
+    </button>
+    <button class="full" id="demo-full" type="button" hidden>
+      <svg class="i-enter" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>
+      <svg class="i-exit" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h5V3M21 8h-5V3M3 16h5v5M21 16h-5v5"/></svg>
     </button>
   </div>
 </div>
@@ -289,6 +305,7 @@ function setLang(l) {
   document.querySelectorAll('.lang button').forEach(b => b.setAttribute('aria-pressed', b.dataset.set === l));
   try { localStorage.setItem('lang', l); } catch (e) {}
   setVideoLang(l);
+  if (typeof setFullLabel === 'function') setFullLabel();
 }
 
 // the demo video: the language of the page; it waits for the visitor to press Play
@@ -317,6 +334,41 @@ function toggleDemo() {
 demoToggle.addEventListener('click', toggleDemo);
 demo.addEventListener('click', toggleDemo);
 showDemoState();
+
+// full screen: the whole frame where the browser allows it (Android, iPad, desktop), so our Play button stays;
+// iPhone cannot full-screen an element, only the video itself (its own player takes over)
+const demoBox = demo.parentElement;
+const demoFull = document.getElementById('demo-full');
+const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+const canBoxFull = !!(demoBox.requestFullscreen || demoBox.webkitRequestFullscreen);
+const canVideoFull = !!(demo.webkitEnterFullscreen || demo.webkitSupportsFullscreen);
+function setFullLabel() {
+  const full = fsElement() === demoBox, pl = html.lang === 'pl';
+  demoFull.setAttribute('aria-label', full ? (pl ? 'Zamknij pełny ekran' : 'Exit full screen') : (pl ? 'Wideo na pełnym ekranie' : 'Full screen video'));
+  demoFull.title = demoFull.getAttribute('aria-label');
+}
+function onFullChange() {
+  demoBox.classList.toggle('is-full', fsElement() === demoBox);
+  setFullLabel();
+  try {   // phones: the demo is landscape, turn the screen to match
+    if (fsElement() === demoBox) screen.orientation.lock('landscape').catch(() => {});
+    else screen.orientation.unlock();
+  } catch (e) {}
+}
+function toggleFull() {
+  if (fsElement()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+  if (demoPaused) { demoPaused = false; demo.play().catch(() => {}); showDemoState(); }   // watching it full screen means playing it
+  if (canBoxFull) (demoBox.requestFullscreen || demoBox.webkitRequestFullscreen).call(demoBox);
+  else demo.webkitEnterFullscreen();
+}
+if (canBoxFull || canVideoFull) {
+  demoFull.hidden = false;
+  demoFull.addEventListener('click', toggleFull);
+  document.addEventListener('fullscreenchange', onFullChange);
+  document.addEventListener('webkitfullscreenchange', onFullChange);
+  demo.addEventListener('webkitendfullscreen', () => { demoPaused = demo.paused; showDemoState(); });   // iPhone's player closed
+  setFullLabel();
+}
 let saved = null; try { saved = localStorage.getItem('lang'); } catch (e) {}
 setLang(saved || ((navigator.language || '').toLowerCase().startsWith('pl') ? 'pl' : 'en'));
 document.querySelectorAll('.lang button').forEach(b => b.addEventListener('click', () => setLang(b.dataset.set)));
